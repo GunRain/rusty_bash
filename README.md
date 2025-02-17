@@ -5,13 +5,18 @@
 [![macos-latest](https://github.com/shellgei/rusty_bash/actions/workflows/macos.yml/badge.svg)](https://github.com/shellgei/rusty_bash/actions/workflows/macos.yml)
 ![](https://img.shields.io/github/license/shellgei/rusty_bash)
 
-[![demo](https://github.com/shellgei/rusty_bash/assets/1232918/13f9ae0b-45b6-4b89-ab5d-b523aadd09bf)](https://www.youtube.com/watch?v=RL8M6PZfDYo)
+## NEWS
+
+Bash-completion starts working on our shell! (currently, only with dev-completion branch)
+
+![completion](https://github.com/user-attachments/assets/e4af177c-3fdd-4f59-a70b-9c97df96b4bc)
 
 ## What's this?
 
 A clone of Bash, which is developed as a hobby of our group and for monthly articles on SoftwareDesign magazine published by Gijutsu-Hyohron Co., Ltd.
 
-## Quick Start
+## Quick 
+Start
 
 ```bash
 $ git clone https://github.com/shellgei/rusty_bash.git
