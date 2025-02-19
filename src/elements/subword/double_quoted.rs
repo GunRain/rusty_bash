@@ -7,6 +7,7 @@ use crate::error::parse::ParseError;
 use crate::error::exec::ExecError;
 use crate::elements::word::{Word, substitution};
 use crate::elements::subword::CommandSubstitution;
+use crate::elements::subword::Arithmetic;
 use super::{BracedParam, EscapedChar, SimpleSubword, Parameter, Subword, VarName};
 
 #[derive(Debug, Clone, Default)]
@@ -72,21 +73,22 @@ impl DoubleQuoted {
         let mut ans = vec![];
 
         for sw in &mut self.subwords {
-            if sw.is_array() {
-                let array = match sw.get_text() {
-                    "$@" | "${@}" => core.db.get_position_params(),
-                    _ => {
-                        let _ = sw.substitute(core);
-                        sw.get_array_elem()
-                    },
-                };
-
-                for pp in array {
-                    ans.push(Box::new( SimpleSubword {text: pp}) as Box<dyn Subword>);
-                    self.split_points.push(ans.len());
-                }
-            }else{
+            if ! sw.is_array() {
                 ans.push(sw.boxed_clone());
+                continue;
+            }
+
+            let array = match sw.get_text() {
+                "$@" | "${@}" => core.db.get_position_params(),
+                _ => {
+                    let _ = sw.substitute(core);
+                    sw.get_array_elem()
+                },
+            };
+
+            for pp in array {
+                ans.push(Box::new( SimpleSubword {text: pp}) as Box<dyn Subword>);
+                self.split_points.push(ans.len());
             }
         }
         self.split_points.pop();
@@ -107,6 +109,17 @@ impl DoubleQuoted {
     fn eat_braced_param(feeder: &mut Feeder, ans: &mut Self, core: &mut ShellCore)
         -> Result<bool, ParseError> {
         if let Some(a) = BracedParam::parse(feeder, core)? {
+            ans.text += a.get_text();
+            ans.subwords.push(Box::new(a));
+            Ok(true)
+        }else{
+            Ok(false)
+        }
+    }
+
+    fn eat_arithmetic(feeder: &mut Feeder, ans: &mut Self, core: &mut ShellCore)
+        -> Result<bool, ParseError> {
+        if let Some(a) = Arithmetic::parse(feeder, core)? {
             ans.text += a.get_text();
             ans.subwords.push(Box::new(a));
             Ok(true)
@@ -180,6 +193,7 @@ impl DoubleQuoted {
 
         loop {
             while Self::eat_braced_param(feeder, &mut ans, core)?
+               || Self::eat_arithmetic(feeder, &mut ans, core)?
                || Self::eat_command_substitution(feeder, &mut ans, core)?
                || Self::eat_special_or_positional_param(feeder, &mut ans, core)
                || Self::eat_doller(feeder, &mut ans)

@@ -77,12 +77,13 @@ impl Terminal {
 
         let org_word = core.db.get_array_elem("COMP_WORDS", "0")?;
         let prev_word = core.db.get_array_elem("COMP_WORDS", &prev_pos.to_string())?;
-        let cur_word = core.db.get_array_elem("COMP_WORDS", &cur_pos.to_string())?;
+        let target_word = core.db.get_array_elem("COMP_WORDS", &cur_pos.to_string())?;
 
-        match core.completion_functions.get(&org_word) {
-            Some(value) => {
-                let command = format!("prev={} cur={} {}", &prev_word, &cur_word, &value);//TODO: cur should be set
-                let mut feeder = Feeder::new(&command);                              // by bash-completion 
+        match core.completion_info.get(&org_word) {
+            Some(info) => {
+                let command = format!("{} \"{}\" \"{}\" \"{}\"",
+                                        &info.function, &org_word, &target_word, &prev_word);
+                let mut feeder = Feeder::new(&command);
 
                 if let Ok(Some(mut a)) = SimpleCommand::parse(&mut feeder, core) {
                     let mut dummy = Pipe::new("".to_string());
@@ -122,28 +123,32 @@ impl Terminal {
 
     fn make_default_compreply(&mut self, core: &mut ShellCore, args: &mut Vec<String>,
                               com: &str, pos: &str) -> Vec<String> {
-        if core.completion_actions.contains_key(com) {
-            let (action, options) = core.completion_actions[com].clone();
-            let mut cands = match action.as_ref() {
-                "alias" => completion::compgen_a(core, args),
-                "command" => completion::compgen_c(core, args),
-                "job" => completion::compgen_j(core, args),
-                "setopt" => completion::compgen_o(core, args),
-                "stopped" => completion::compgen_stopped(core, args),
-                "user" => completion::compgen_u(core, args),
-                "variable" => completion::compgen_v(core, args),
-                _ => vec![],
-            };
+        if core.completion_info.contains_key(com) {
+            let action = core.completion_info[com].action.clone();
+            let options = core.completion_info[com].options.clone();
 
-            if options.contains_key("-P") {
-                let prefix = &options["-P"];
-                cands = cands.iter().map(|c| prefix.clone() + c).collect();
+            if action != "" {
+                let mut cands = match action.as_ref() {
+                    "alias" => completion::compgen_a(core, args),
+                    "command" => completion::compgen_c(core, args),
+                    "job" => completion::compgen_j(core, args),
+                    "setopt" => completion::compgen_o(core, args),
+                    "stopped" => completion::compgen_stopped(core, args),
+                    "user" => completion::compgen_u(core, args),
+                    "variable" => completion::compgen_v(core, args),
+                    _ => vec![],
+                };
+    
+                if options.contains_key("-P") {
+                    let prefix = &options["-P"];
+                    cands = cands.iter().map(|c| prefix.clone() + c).collect();
+                }
+                if options.contains_key("-S") {
+                    let suffix = &options["-S"];
+                    cands = cands.iter().map(|c| c.to_owned() + &suffix.clone()).collect();
+                }
+                return cands;
             }
-            if options.contains_key("-S") {
-                let suffix = &options["-S"];
-                cands = cands.iter().map(|c| c.to_owned() + &suffix.clone()).collect();
-            }
-            return cands;
         }
 
         if pos == "0" {
@@ -320,6 +325,13 @@ impl Terminal {
 
         let all_string = self.get_string(prompt_len);
         core.db.set_param("COMP_LINE", &all_string, None)?;
+
+        let tp = match self.tab_num {
+            1 => "\t",
+            _ => "?",
+        };
+        core.db.set_param("COMP_TYPE", &tp, None)?;
+        core.db.set_param("COMP_KEY", "9", None)?;
 
         let mut words_all = utils::split_words(&all_string);
         words_all.retain(|e| e != "");

@@ -90,7 +90,7 @@ impl Subword for BracedParam {
         }
     }
 
-    fn is_array(&self) -> bool {self.is_array}
+    fn is_array(&self) -> bool {self.is_array && ! self.num}
     fn get_array_elem(&self) -> Vec<String> {self.array.clone()}
 }
 
@@ -155,6 +155,7 @@ impl BracedParam {
             (true, _)   => core.db.get_array_elem(&self.param.name, &index).unwrap().chars().count().to_string(),
             (false, _)  => core.db.get_array_elem(&self.param.name, &index).unwrap(),
        };
+
        self.optional_operation(core)
     }
 

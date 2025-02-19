@@ -2,7 +2,7 @@
 //SPDX-License-Identifier: BSD-3-Clause
 
 use crate::{file_check, ShellCore, Feeder};
-use crate::core::HashMap;
+use crate::core::{CompletionInfo, HashMap};
 use crate::elements::word::Word;
 use crate::utils;
 use crate::utils::{arg, directory};
@@ -47,6 +47,25 @@ pub fn compgen_f(core: &mut ShellCore, args: &mut Vec<String>) -> Vec<String> {
     ans.iter_mut().for_each(|a| { a.pop(); } );
     ans.sort();
     ans
+}
+
+fn action_to_reduce_symbol(arg: &str) -> String {
+    match arg {
+        "file" => "f",
+        "directory" => "d",
+        "command" => "c",
+        "alias" => "a",
+        "builtin" => "b",
+        "keyword" => "k",
+        "variable" => "v",
+        "export" => "e",
+        "setopt" => "o",
+        "job" => "j",
+        "service" => "s",
+        "user" => "u",
+        "group" => "g",
+        _ => "",
+    }.to_string()
 }
 
 fn replace_args_compgen(args: &mut Vec<String>) -> bool {
@@ -341,13 +360,47 @@ fn opt_to_action(arg: &str) -> String {
     }.to_string()
 }
 
-pub fn complete(core: &mut ShellCore, args: &mut Vec<String>) -> i32 {
-    if args.len() <= 1 {
-        return 0;
+fn print_complete(core: &mut ShellCore) -> i32 {
+    if core.default_completion_functions != "" {
+        println!("complete -F {} -D", &core.default_completion_functions);
     }
 
+    for (name, info) in &core.completion_info {
+        if info.function != "" {
+            print!("complete -F {} ", &info.function);
+        }else if info.action != "" {
+            let symbol = action_to_reduce_symbol(&info.action);
+
+            if symbol == "" {
+                print!("complete -A {} ", &info.action);
+            }else{
+                print!("complete -{} ", &symbol);
+            }
+
+            if info.options.contains_key("-P") {
+                print!("-P '{}' ", &info.options["-P"]);
+            }
+            if info.options.contains_key("-S") {
+                print!("-S '{}' ", &info.options["-S"]);
+            }
+        }else{
+            print!("complete ");
+        }
+        println!("{}", &name); 
+    }
+    0
+}
+
+pub fn complete(core: &mut ShellCore, args: &mut Vec<String>) -> i32 {
+    if args.len() <= 1 {
+        return print_complete(core);
+    }
+
+    let mut o_options = vec![];
     let mut args = arg::dissolve_options(args);
-    //arg::replace_to_short_opt("-o", "default", "-D", &mut args);
+    while let Some(v) = arg::consume_with_next_arg("-o", &mut args) {
+        o_options.push(v);
+    }
 
     let mut options = HashMap::new();
     let prefix = arg::consume_with_next_arg("-P", &mut args);
@@ -362,14 +415,26 @@ pub fn complete(core: &mut ShellCore, args: &mut Vec<String>) -> i32 {
     let action = opt_to_action(&args[1]);
     if action != "" {
         for command in &args[2..] {
-            core.completion_actions.insert(command.clone(), (action.clone(), options.clone()));
+            if ! core.completion_info.contains_key(command) {
+                core.completion_info.insert(command.clone(), CompletionInfo::default());
+            }
+    
+            let info = &mut core.completion_info.get_mut(command).unwrap();
+            info.action = action.clone();
+            info.options = options.clone();
         }
         return 0;
     }
 
-    if args.len() > 2 && args[1] == "-A" {
-        for a in &args[3..] {
-            core.completion_actions.insert(a.clone(), (args[2].to_string(), options.clone()));
+    if args.len() > 3 && args[1] == "-A" {
+        for command in &args[3..] {
+            if ! core.completion_info.contains_key(command) {
+                core.completion_info.insert(command.clone(), CompletionInfo::default());
+            }
+    
+            let info = &mut core.completion_info.get_mut(command).unwrap();
+            info.action = args[2].clone();
+            info.options = options.clone();
         }
 
         return 0;
@@ -383,20 +448,50 @@ pub fn complete(core: &mut ShellCore, args: &mut Vec<String>) -> i32 {
     }
 
     if args.len() > 3 && args[1] == "-F" {
-        let func_name = args[2].clone();
-
-        if args.len() > 5 && args[3] == "-o" && args[4] == "default" {
-            for a in &mut args[5..] {
-                core.completion_functions.insert(a.clone(), func_name.clone());
+        let func = args[2].clone();
+        for command in &args[3..] {
+            if ! core.completion_info.contains_key(command) {
+                core.completion_info.insert(command.clone(), CompletionInfo::default());
             }
-            return 0;
+    
+            let info = &mut core.completion_info.get_mut(command).unwrap();
+            info.function = func.clone();
+            info.o_options = o_options.clone();
         }
-        for a in &mut args[3..] {
-            core.completion_functions.insert(a.clone(), func_name.clone());
-        }
+
         return 0;
     }
 
     eprintln!("sush: {} {}: still unsupported", &args[0], &args[1]);
     1
+}
+
+pub fn compopt(core: &mut ShellCore, args: &mut Vec<String>) -> i32 {
+    if args.len() < 2 {
+        dbg!("{:?}", &core.completion_info);
+        return 1;
+    }
+
+    let optlist = vec!["bashdefault", "default",
+                       "dirnames", "filenames", "noquote",
+                       "nosort", "nospace", "plusdirs"];
+    let optlist: Vec<String> = optlist.iter().map(|s| s.to_string()).collect();
+
+    let com = args[1].clone();
+    if core.completion_info.contains_key(&com) {
+        let info = &core.completion_info.get_mut(&com).unwrap();
+
+        print!("compopt ");
+        for opt in &optlist {
+            match info.o_options.contains(opt) {
+                true  => print!("-o {} ", opt), 
+                false => print!("+o {} ", opt), 
+            }
+        }
+        println!("{}", &com);
+    }else{
+        eprintln!("sush: compopt: {}: no completion specification", &args[1]);
+    }
+
+    0
 }
